@@ -1,19 +1,22 @@
 package app.file_manager.application.usecase;
 
-import app.file_manager.domain.model.FileMetadata;
+import app.file_manager.web.dto.FileMetadataDto;
 import org.springframework.web.multipart.MultipartFile;
 
 import java.io.IOException;
+import java.util.List;
 
-public interface FIleService {
+public interface FileService {
 
-    public FileMetadata saveFile(MultipartFile file) throws IOException;
+    public List<FileMetadataDto> getAll() ;
 
-    public FileMetadata getMetadata(Long id) throws IOException;
+    public FileMetadataDto saveFile(MultipartFile file) ;
 
-    public byte[] getFile(Long id) throws IOException;
+    public FileMetadataDto getMetadata(long id) ;
+
+    public byte[] getFile(long id) ;
+
+    public void deleteFile(long id);
 
     public void validateFile(MultipartFile file);
-
-    public void deleteFile(Long id);
 }

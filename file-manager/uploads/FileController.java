@@ -1,11 +1,12 @@
-package app.file_manager.web.controller;
+package mx.ingsoftwareii.sinaloa_backend.web.controllers;
 
 import lombok.RequiredArgsConstructor;
-import app.file_manager.application.usecase.FileService;
-import app.file_manager.web.dto.FileMetadataDto;
+import mx.ingsoftwareii.sinaloa_backend.application.usecases.FileService;
+import mx.ingsoftwareii.sinaloa_backend.web.dtos.FileMetadataDto;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
 
@@ -13,6 +14,7 @@ import java.util.List;
 
 @RestController
 @RequestMapping("/api/files")
+//@PreAuthorize(value = "hasAnyRole('USER','SUPERUSER')")
 @RequiredArgsConstructor
 public class FileController {
     private final FileService fileService;
@@ -28,13 +30,15 @@ public class FileController {
     }
 
     @GetMapping
-    public ResponseEntity<List<FileMetadataDto>> getAllFilesByGroup(){
-        return ResponseEntity.ok(fileService.getAll());
+    public ResponseEntity<List<FileMetadataDto>> getAllFilesByGroup(@RequestParam(name = "group") long groupId){
+        return ResponseEntity.ok(fileService.getAllByGroup(groupId));
     }
 
     @PostMapping("/upload")
-    public ResponseEntity<FileMetadataDto> upload(@RequestParam(name = "file") MultipartFile file){
-        FileMetadataDto metadataDto = fileService.saveFile(file);
+    public ResponseEntity<FileMetadataDto> upload(@RequestParam(name = "file") MultipartFile file,
+                                                  @RequestParam(name = "user") long userId,
+                                                  @RequestParam(name = "group") long groupId){
+        FileMetadataDto metadataDto = fileService.saveFile(file, userId, groupId);
 
         return ResponseEntity.ok(metadataDto);
     }

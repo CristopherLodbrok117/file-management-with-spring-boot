@@ -8,9 +8,9 @@ import lombok.NoArgsConstructor;
 
 import java.time.LocalDateTime;
 
-@AllArgsConstructor
-@NoArgsConstructor
 @Data
+@NoArgsConstructor
+@AllArgsConstructor
 @Builder
 
 @Entity
@@ -21,15 +21,20 @@ public class FileMetadata {
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
-    @Column(name = "original_name")
-    private String originalName;
+    private short tag;
+
+    @Column(name = "name")
+    private String name;
 
     @Column(name = "path")
     private String path;
 
-    private String type;
+    @Column(name = "file_type")
+    private String fileType;
+
     private long size;
 
-    @Column(name = "upload_date")
-    private LocalDateTime uploadDate;
+    @Column(name = "uploaded_at")
+    private LocalDateTime uploadedAt;
+
 }

@@ -1,11 +1,11 @@
 package app.file_manager.application.service;
 
-import app.file_manager.application.usecase.FIleService;
-import app.file_manager.domain.exception.FileException;
-import app.file_manager.domain.model.FileMetadata;
-import app.file_manager.domain.repository.FileMetadataRepository;
 import lombok.RequiredArgsConstructor;
-import org.springframework.beans.factory.annotation.Value;
+import app.file_manager.domain.repository.FileMetadataRepository;
+import app.file_manager.application.usecase.FileService;
+import app.file_manager.domain.model.FileMetadata;
+import app.file_manager.domain.exception.FileException;
+import app.file_manager.web.dto.FileMetadataDto;
 import org.springframework.stereotype.Service;
 import org.springframework.web.multipart.MultipartFile;
 
@@ -15,108 +15,113 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.time.LocalDateTime;
-import java.util.HashSet;
 import java.util.List;
+import java.util.Set;
 
 @Service
 @RequiredArgsConstructor
-public class FileServiceImpl implements FIleService {
+public class FileServiceImpl implements FileService {
 
-    @Value("${file.storage.location}")
-    private String storageLocation;
-
-    @Value("${file.max-size}")
-    private long maxFileSize;
-
-    @Value("${file.allowed-types}")
-    private HashSet<String> allowedTypes;
+    private static final long MAX_FILE_SIZE = 10 * 1024 * 1024; // 5MB
+    private static final String STORAGE_LOCATION = "uploads";
 
     private final FileMetadataRepository fileMetadataRepository;
+    private final Set<String> allowedTypes;
 
     @Override
-    public FileMetadata saveFile(MultipartFile file) {
-        // 1. Hacer validaciones
+    public List<FileMetadataDto> getAll() {
+        List<FileMetadata> metadataList = fileMetadataRepository.findAll();
 
+        return metadataList.stream()
+                .map(FileMetadataDto::fromEntity)
+                .toList();
+    }
+
+    @Override
+    public FileMetadataDto saveFile(MultipartFile file) {
+        /* 1. Validar archivo */
         validateFile(file);
 
-        String fileLocation = storageLocation + File.separator + file.getOriginalFilename();
+        short tag = 1;
 
         try{
-            // 2. Crear directorio si no existe
-            Path storagePath = Paths.get(storageLocation);
+            /* 2. Cerar directorio si no existe */
+            Path storagePath = Paths.get(STORAGE_LOCATION);
             if(!Files.exists(storagePath)){
                 Files.createDirectories(storagePath);
             }
 
-            // 3. Guardar archivo
-
+            /* 3. Guardar archivo */
+            String fileLocation = STORAGE_LOCATION + File.separator + file.getOriginalFilename();
             Path filePath = Paths.get(fileLocation);
+
+            /* To replace */
+            FileMetadata fileMetadata;
+            String fileName = file.getOriginalFilename();
+
+            if(Files.exists(filePath)){
+                fileMetadata = fileMetadataRepository.findByName(fileName)
+                        .orElseThrow(() -> new FileException("No se encontro el archivo con el nombre: " + fileName));
+
+                Files.delete(filePath);
+            }
+            else{
+                fileMetadata = FileMetadata.builder()
+                        .tag(tag)
+                        .name(fileName)
+                        .path(fileLocation)
+                        .fileType(file.getContentType())
+
+                        .build();
+            }
 
             Files.copy(file.getInputStream(), filePath);
 
+            /* 4. Guardar metadatos en BD */
+            fileMetadata.setSize(file.getSize());
+            fileMetadata.setUploadedAt(LocalDateTime.now());
+
+            fileMetadata = fileMetadataRepository.save(fileMetadata);
+
+            /* 5. Crear DTO y retornar */
+            return FileMetadataDto.fromEntity(fileMetadata);
         }
-        catch(IOException ex){
-
-            throw new RuntimeException(ex.getMessage());
+        catch(IOException ex) {
+            throw new FileException(ex.getMessage());
         }
-
-        // 4. Guardar metadatos en BD y retornarlos
-        System.out.println("4. Guardar metatdata");
-        FileMetadata fileMetadata = FileMetadata.builder()
-                .originalName(file.getOriginalFilename())
-                .path(fileLocation)
-                .size(file.getSize())
-                .type(file.getContentType())
-                .uploadDate(LocalDateTime.now())
-                .build();
-
-        return fileMetadataRepository.save(fileMetadata);
     }
 
     @Override
-    public FileMetadata getMetadata(Long id) {
+    public FileMetadataDto getMetadata(long id) {
+        FileMetadata metadata = fileMetadataRepository.findById(id)
+                .orElseThrow(() -> new FileException("No se encontro el archivo con ID: " + id));
 
-        return fileMetadataRepository.findById(id)
-                .orElseThrow(() -> new FileException("File not fot found with ID: " + id));
+        return FileMetadataDto.fromEntity(metadata);
     }
 
     @Override
-    public byte[] getFile(Long id)  {
-        FileMetadata metadata = getMetadata(id);
-        Path path = Paths.get(metadata.getPath());
+    public byte[] getFile(long id) {
+        /* 1. Buscar metadata*/
+        FileMetadata metadata = fileMetadataRepository.findById(id)
+                .orElseThrow(() -> new FileException("No se encontro el archivo con ID: " + id));
+        Path filePath = Paths.get(metadata.getPath());
 
-        if(!Files.exists(path)){
-            throw  new FileException("El archivo no se encuentra en el sistema de archivos");
+        /* 2. Verificar exixtencia en sistema de archivos */
+        if(!Files.exists(filePath)){
+            throw new FileException("El archivo no se encuentra en el sistema de archivos");
         }
 
         try{
-            return Files.readAllBytes(path);
+            /* 3. Retornar archivo */
+            return Files.readAllBytes(filePath);
         }
-        catch(IOException ex){
-            throw new RuntimeException(ex.getMessage());
+        catch(IOException ex) {
+            throw new FileException(ex.getMessage());
         }
-
-
     }
 
     @Override
-    public void validateFile(MultipartFile file) {
-
-        if(file.isEmpty()){
-            throw new FileException("El archivo esta vacio");
-        }
-        if(file.getSize() > maxFileSize){
-            throw new FileException("El archivo excede el tamaño maximo permitido de " +
-                    (maxFileSize/1024) + " KB");
-        }
-        if(!allowedTypes.contains(file.getContentType())){
-            throw new FileException("Tipo de arcihvo no permitido " + file.getContentType());
-        }
-
-    }
-
-    @Override
-    public void deleteFile(Long id) {
+    public void deleteFile(long id) {
         // 1. Buscar los metadatos del archivo en la BD
         FileMetadata metadata = fileMetadataRepository.findById(id)
                 .orElseThrow(() -> new FileException("No se encontró el archivo con ID: " + id));
@@ -128,11 +133,26 @@ public class FileServiceImpl implements FIleService {
                 Files.delete(filePath);
             }
         } catch (IOException e) {
-            throw new RuntimeException("Error al eliminar el archivo: " + e.getMessage());
+            throw new FileException( e.getMessage());
         }
 
         // 3. Eliminar los metadatos de la BD
         fileMetadataRepository.delete(metadata);
+    }
+
+    @Override
+    public void validateFile(MultipartFile file) {
+        if(file.isEmpty()){
+            throw new FileException("El archivo esta vacio");
+        }
+        if(file.getSize() > MAX_FILE_SIZE){
+            throw new FileException("El archivo excede el tamaño maximo permitido de " +
+                    (MAX_FILE_SIZE/1024) + " KB");
+        }
+        if(!allowedTypes.contains(file.getContentType())){
+            System.out.println("allowed: " + allowedTypes);
+            throw new FileException("Tipo de arcihvo no permitido: " + file.getContentType());
+        }
     }
 
 }
